@@ -222,8 +222,6 @@ void deregister_content(int udp_sock, struct sockaddr_in *index_server_addr, con
 	log_raw_data("Received Acknowledgment", buffer, bytes_received);
 }
 
-    
-}
 
 
 // Main function
