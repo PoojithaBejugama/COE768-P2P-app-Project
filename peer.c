@@ -3,9 +3,21 @@
 #include <stdlib.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+
 #include <sys/select.h>
+#include <errno.h>
 
 #define BUFFER_SIZE 1024
+#define FIXED_PORT 19000 // Change to 20000 for Peer2
+
+// Utility function to log raw data
+void log_raw_data(const char *prefix, const char *data, int length) {
+    printf("%s [Raw Data]: ", prefix);
+    for (int i = 0; i < length; i++) {
+        printf("%02X ", (unsigned char)data[i]);
+    }
+    printf("\n");
+}
 
 // Function to handle content download requests
 void handle_download(int tcp_sock) {
@@ -19,12 +31,20 @@ void handle_download(int tcp_sock) {
         perror("Failed to accept connection");
         return;
     }
+
     printf("Accepted connection from %s:%d\n",
            inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 
     // Receive content name request
-    recv(client_sock, buffer, BUFFER_SIZE, 0);
+    int bytes_received = recv(client_sock, buffer, BUFFER_SIZE, 0);
+    if (bytes_received < 0) {
+        perror("Failed to receive content request");
+        close(client_sock);
+        return;
+    }
+
     printf("Requested content: %s\n", buffer);
+    log_raw_data("Received", buffer, bytes_received);
 
     // Check if the file exists
     FILE *file = fopen(buffer, "rb");
@@ -39,7 +59,13 @@ void handle_download(int tcp_sock) {
     while (1) {
         int bytes_read = fread(buffer, 1, BUFFER_SIZE, file);
         if (bytes_read <= 0) break;
-        send(client_sock, buffer, bytes_read, 0);
+
+        int bytes_sent = send(client_sock, buffer, bytes_read, 0);
+        if (bytes_sent < 0) {
+            perror("Failed to send file data");
+            break;
+        }
+        log_raw_data("Sent", buffer, bytes_sent);
     }
 
     printf("File transfer completed.\n");
@@ -47,150 +73,165 @@ void handle_download(int tcp_sock) {
     close(client_sock);
 }
 
-void register_content(int udp_sock, struct sockaddr_in *index_server_addr, const char *content_name, int tcp_sock, int fixed_tcp_port) {
+// Function to register content
+void register_content(int udp_sock, struct sockaddr_in *index_server_addr, const char *content_name, int tcp_sock) {
     struct sockaddr_in tcp_addr;
+    socklen_t len = sizeof(tcp_addr);
 
-    // Bind the TCP socket to the fixed port
-    memset(&tcp_addr, 0, sizeof(tcp_addr));
-    tcp_addr.sin_family = AF_INET;
-    tcp_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    tcp_addr.sin_port = htons(fixed_tcp_port);
-
-    if (bind(tcp_sock, (struct sockaddr *)&tcp_addr, sizeof(tcp_addr)) < 0) {
-        perror("TCP bind failed");
-        close(tcp_sock);
-        exit(EXIT_FAILURE);
+    // Get the dynamically assigned port
+    if (getsockname(tcp_sock, (struct sockaddr *)&tcp_addr, &len) < 0) {
+        perror("Failed to retrieve TCP socket details");
+        return;
     }
-
-    // Start listening on the fixed TCP port
-    if (listen(tcp_sock, 5) < 0) {
-        perror("Failed to listen on TCP socket");
-        close(tcp_sock);
-        exit(EXIT_FAILURE);
-    }
-    printf("Listening on fixed TCP port: %d\n", fixed_tcp_port);
+    int assigned_port = ntohs(tcp_addr.sin_port);
 
     // Prepare the registration message
     char buffer[BUFFER_SIZE] = {0};
     buffer[0] = 'R'; // 'R' for registration
-    snprintf(buffer + 1, BUFFER_SIZE - 1, "%s,%d", content_name, fixed_tcp_port);
+    snprintf(buffer + 1, BUFFER_SIZE - 1, "%s,%d", content_name, assigned_port);
 
-    // Send the registration to the Index Server
-    sendto(udp_sock, buffer, strlen(buffer), 0, (struct sockaddr *)index_server_addr, sizeof(*index_server_addr));
-    printf("Registered content '%s' on fixed TCP port %d\n", content_name, fixed_tcp_port);
+    // Send registration to the Index Server
+    int bytes_sent = sendto(udp_sock, buffer, strlen(buffer), 0, (struct sockaddr *)index_server_addr, sizeof(*index_server_addr));
+    if (bytes_sent < 0) {
+        perror("Failed to send registration data");
+        return;
+    }
+    log_raw_data("Sent Registration", buffer, bytes_sent);
+
+    // Receive acknowledgment
+    int bytes_received = recvfrom(udp_sock, buffer, BUFFER_SIZE, 0, NULL, NULL);
+    if (bytes_received < 0) {
+        perror("Failed to receive acknowledgment");
+        return;
+    }
+
+    printf("Index server response: %s\n", buffer);
+    log_raw_data("Received Acknowledgment", buffer, bytes_received);
 }
-// Function to search and download content
+
 void search_content(int udp_sock, struct sockaddr_in *index_server_addr, const char *content_name) {
-    char buffer[BUFFER_SIZE] = {0}; // Buffer to store messages
+    char buffer[BUFFER_SIZE] = {0}; // Buffer to hold the request and response
+    char server_ip[16] = {0};       // To store the extracted server IP
+    int server_port = 0;            // To store the extracted server port
 
-    // Prepare the search request message to send to the Index Server
-    snprintf(buffer, BUFFER_SIZE, "S%s", content_name); // 'S' indicates a search request
-    sendto(udp_sock, buffer, strlen(buffer), 0, (struct sockaddr *)index_server_addr, sizeof(*index_server_addr));
+    // Prepare the search request message
+    snprintf(buffer, BUFFER_SIZE, "S%s", content_name); // 'S' for Search
 
-    // Receive the response from the Index Server
-    recvfrom(udp_sock, buffer, BUFFER_SIZE, 0, NULL, NULL);
+    // Send search request to the Index Server
+    int bytes_sent = sendto(udp_sock, buffer, strlen(buffer), 0, (struct sockaddr *)index_server_addr, sizeof(*index_server_addr));
+    if (bytes_sent < 0) {
+        perror("Failed to send search request");
+        return;
+    }
+    log_raw_data("Sent Search Request", buffer, bytes_sent);
 
-    // Log the raw response for debugging
-    printf("[DEBUG] Raw Index Server response: %s\n", buffer);
+    // Receive response from Index Server
+    int bytes_received = recvfrom(udp_sock, buffer, BUFFER_SIZE, 0, NULL, NULL);
+    if (bytes_received < 0) {
+        perror("Failed to receive search response");
+        return;
+    }
+    buffer[bytes_received] = '\0'; // Null-terminate the received string
+    printf("Index server response: %s\n", buffer);
+    log_raw_data("Received Search Response", buffer, bytes_received);
 
-    // Check if the response contains "Content server" (indicating the content is found)
-    if (strstr(buffer, "Content server")) {
-        char server_ip[16];   // To store the content server's IP address
-        int server_port;      // To store the content server's port
-
-        // Parse the response to extract the IP address and port
-        int result = sscanf(buffer, "Content server: IP %15s, Port %d", server_ip, &server_port);
-        if (result != 2) { // Ensure that both IP and port are successfully parsed
-            printf("Error: Failed to parse server IP and port from response\n");
-            return; // Exit the function if parsing fails
-        }
-
-        // Log the parsed IP and port for verification
-        printf("[DEBUG] Extracted IP: %s, Port: %d\n", server_ip, server_port);
-
-        // Log the intention to connect to the content server
+    // Parse the response to extract IP and port
+    if (sscanf(buffer, "Content server: IP %15[^,], Port %d", server_ip, &server_port) == 2) {
         printf("Connecting to Content Server: IP=%s, Port=%d\n", server_ip, server_port);
 
-        // Create a new TCP socket for connecting to the content server
+        // Validate the port range
+        if (server_port < 0 || server_port > 65535) {
+            fprintf(stderr, "Invalid port number received: %d\n", server_port);
+            return;
+        }
+
+        // Establish TCP connection with the content server
         int tcp_sock = socket(AF_INET, SOCK_STREAM, 0);
-        if (tcp_sock < 0) { // Check if socket creation failed
+        if (tcp_sock < 0) {
             perror("Failed to create TCP socket");
-            return; // Exit the function if the socket creation fails
+            return;
         }
 
-        // Configure the address of the content server
         struct sockaddr_in content_server_addr;
-        content_server_addr.sin_family = AF_INET;                // IPv4 address family
-        content_server_addr.sin_port = htons(server_port);       // Convert port to network byte order
-        inet_pton(AF_INET, server_ip, &content_server_addr.sin_addr); // Convert IP address to binary format
-
-        // Attempt to connect to the content server
-        if (connect(tcp_sock, (struct sockaddr *)&content_server_addr, sizeof(content_server_addr)) < 0) {
-            perror("TCP connection failed"); // Log connection failure
-            close(tcp_sock); // Close the socket
-            return; // Exit the function if connection fails
+        memset(&content_server_addr, 0, sizeof(content_server_addr));
+        content_server_addr.sin_family = AF_INET;
+        content_server_addr.sin_port = htons(server_port);
+        if (inet_pton(AF_INET, server_ip, &content_server_addr.sin_addr) <= 0) {
+            perror("Invalid IP address");
+            close(tcp_sock);
+            return;
         }
 
-        // Send the content name as the request to the content server
+        if (connect(tcp_sock, (struct sockaddr *)&content_server_addr, sizeof(content_server_addr)) < 0) {
+            perror("TCP connection failed");
+            close(tcp_sock);
+            return;
+        }
+
+        // Request the content
         write(tcp_sock, content_name, strlen(content_name));
         printf("Downloading content: %s\n", content_name);
 
-        // Open a file locally to save the downloaded content
+        // Open a file to write the received content
         FILE *fp = fopen(content_name, "wb");
-        if (!fp) { // Check if the file could not be created
+        if (!fp) {
             perror("Failed to open file");
-            close(tcp_sock); // Close the TCP socket
-            return; // Exit the function if file creation fails
+            close(tcp_sock);
+            return;
         }
 
-        // Receive the file content in chunks and write it to the local file
+        // Receive and write the file content
         while (1) {
-            int bytes_received = read(tcp_sock, buffer, BUFFER_SIZE); // Read a chunk of data
-            if (bytes_received <= 0) break; // Exit loop if end of file or error
-            fwrite(buffer, 1, bytes_received, fp); // Write the received chunk to the file
+            int bytes_received = read(tcp_sock, buffer, BUFFER_SIZE);
+            if (bytes_received <= 0) break; // End of file or error
+            fwrite(buffer, 1, bytes_received, fp);
         }
 
-        // Close the file and the TCP socket after the transfer is complete
         fclose(fp);
         close(tcp_sock);
-        printf("Download completed.\n"); // Log the successful completion of the download
+        printf("Download completed.\n");
     } else {
-        // If the response does not indicate a content server, log content not found
-        printf("Content not found.\n");
+        fprintf(stderr, "Failed to parse Index Server response: %s\n", buffer);
     }
+
+    
+        // Function to deregister content
+        void deregister_content(int udp_sock, struct sockaddr_in *index_server_addr, const char *content_name) {
+        char buffer[BUFFER_SIZE] = {0};
+    
+        // Prepare the deregistration message
+        buffer[0] = 'T'; // 'T' for deregistration
+        snprintf(buffer + 1, BUFFER_SIZE - 1, "%s", content_name);
+    
+        // Send deregistration to the Index Server
+        int bytes_sent = sendto(udp_sock, buffer, strlen(buffer), 0, (struct sockaddr *)index_server_addr, sizeof(*index_server_addr));
+        if (bytes_sent < 0) {
+            perror("Failed to send deregistration data");
+            return;
+        }
+        log_raw_data("Sent Deregistration", buffer, bytes_sent);
+    
+        // Receive acknowledgment
+        int bytes_received = recvfrom(udp_sock, buffer, BUFFER_SIZE, 0, NULL, NULL);
+        if (bytes_received < 0) {
+            perror("Failed to receive acknowledgment");
+            return;
+        }
+    
+        printf("Index server response: %s\n", buffer);
+        log_raw_data("Received Acknowledgment", buffer, bytes_received);
+    }
+
+    
 }
 
-
-// Function to deregister content
-void deregister_content(int udp_sock, struct sockaddr_in *index_server_addr, const char *content_name) {
-    char buffer[BUFFER_SIZE] = {0};
-    buffer[0] = 'T';
-    snprintf(buffer + 1, BUFFER_SIZE - 1, "%s", content_name);
-
-    // Send deregistration request to the Index Server
-    sendto(udp_sock, buffer, strlen(buffer), 0, (struct sockaddr *)index_server_addr, sizeof(*index_server_addr));
-
-    // Receive server response
-    recvfrom(udp_sock, buffer, BUFFER_SIZE, 0, NULL, NULL);
-    printf("Index server response: %s\n", buffer);
-}
 
 // Main function
 int main() {
     int udp_sock, tcp_sock;
-    struct sockaddr_in index_server_addr;
-    char server_ip[16];
-    int server_port;
-
-    // Fixed port numbers
-    const int udp_port = 8080; // Fixed UDP port
-    const int tcp_port = 9090; // Fixed TCP port
-
-    // Ask user for IP and port of the Index Server
-    printf("Enter Index Server IP: ");
-    scanf("%15s", server_ip);
-    printf("Enter Index Server Port: ");
-    scanf("%d", &server_port);
+    struct sockaddr_in index_server_addr, tcp_addr, peer_addr;
+    char server_ip[16] = "10.1.1.34"; // Index server IP
+    int server_port = 17000; // Index server port
 
     // Create UDP socket
     udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -199,7 +240,20 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    // Configure Index Server address
+    // Bind the UDP socket to a fixed port
+    memset(&peer_addr, 0, sizeof(peer_addr));
+    peer_addr.sin_family = AF_INET;
+    peer_addr.sin_port = htons(FIXED_PORT); // Fixed port for this peer
+    peer_addr.sin_addr.s_addr = inet_addr(FIXED_PORT == 19000 ? "10.1.1.37" : "10.1.1.31");
+
+    if (bind(udp_sock, (struct sockaddr *)&peer_addr, sizeof(peer_addr)) < 0) {
+        perror("UDP bind failed");
+        close(udp_sock);
+        exit(EXIT_FAILURE);
+    }
+    printf("Peer UDP socket bound to IP: %s, Port: %d\n", inet_ntoa(peer_addr.sin_addr), FIXED_PORT);
+
+    // Configure index server address
     memset(&index_server_addr, 0, sizeof(index_server_addr));
     index_server_addr.sin_family = AF_INET;
     index_server_addr.sin_port = htons(server_port);
@@ -212,78 +266,74 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    // Bind the TCP socket to the fixed port
-    struct sockaddr_in tcp_addr;
+    // Bind the TCP socket with a dynamically assigned port
     memset(&tcp_addr, 0, sizeof(tcp_addr));
     tcp_addr.sin_family = AF_INET;
     tcp_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    tcp_addr.sin_port = htons(tcp_port);
-
+    tcp_addr.sin_port = htons(0); // Let OS assign a port
     if (bind(tcp_sock, (struct sockaddr *)&tcp_addr, sizeof(tcp_addr)) < 0) {
         perror("TCP bind failed");
         close(tcp_sock);
         exit(EXIT_FAILURE);
     }
 
-    // Start listening on the fixed TCP port
+    // Listen for incoming connections
     if (listen(tcp_sock, 5) < 0) {
         perror("TCP listen failed");
         close(tcp_sock);
         exit(EXIT_FAILURE);
     }
 
-    printf("Listening on fixed TCP port: %d\n", tcp_port);
+    printf("TCP socket is listening for incoming connections...\n");
 
-    // Set up select() to handle stdin and incoming TCP connections
-    fd_set afds, rfds;
-    FD_ZERO(&afds);
-    FD_SET(STDIN_FILENO, &afds); // Add stdin to the set
-    FD_SET(tcp_sock, &afds);     // Add TCP socket to the set
-
+    // Peer menu and event handling
     while (1) {
-        rfds = afds; // Copy afds to rfds for select
-
         printf("\n--- Peer Menu ---\n");
         printf("1. Register Content\n");
         printf("2. Search Content\n");
-        printf("3. Deregister Content\n");
-        printf("4. Quit\n");
+        printf("3. Quit\n");
         printf("Enter your choice: ");
+        int choice;
+        scanf("%d", &choice);
 
-        if (select(FD_SETSIZE, &rfds, NULL, NULL, NULL) < 0) {
-            perror("Select failed");
-            break;
-        }
-
-        // Check if stdin is ready (user input)
-        if (FD_ISSET(STDIN_FILENO, &rfds)) {
-            int choice;
+        if (choice == 1) {
             char content_name[20];
-            scanf("%d", &choice);
+            printf("Enter content name to register: ");
+            scanf("%19s", content_name);
+            register_content(udp_sock, &index_server_addr, content_name, tcp_sock);
+	// Add the download handling loop after registration 
+printf("Waiting for download requests...\n"); while (1) { handle_download(tcp_sock); }
+        } else if (choice == 2) {
+            char content_name[20];
+            printf("Enter content name to search: ");
+            scanf("%19s", content_name);
+            search_content(udp_sock, &index_server_addr, content_name);
+        } 
 
-            if (choice == 1) {
-                printf("Enter content name to register: ");
-                scanf("%19s", content_name);
-                register_content(udp_sock, &index_server_addr, content_name, tcp_sock, tcp_port);
-            } else if (choice == 2) {
-                printf("Enter content name to search: ");
-                scanf("%19s", content_name);
-                search_content(udp_sock, &index_server_addr, content_name);
-            } else if (choice == 3) {
-                printf("Enter content name to deregister: ");
-                scanf("%19s", content_name);
-                deregister_content(udp_sock, &index_server_addr, content_name);
-            } else if (choice == 4) {
-                printf("Quitting...\n");
-                break;
-            } else {
-                printf("Invalid choice. Please try again.\n");
-            }
+        else if (choice == 4) {
+        char content_name[20];
+        printf("Enter content name to deregister: ");
+        scanf("%19s", content_name);
+        deregister_content(udp_sock, &index_server_addr, content_name);
         }
+            
+        else if (choice == 3) {
+    printf("Deregistering all contents before quitting...\n");
 
-        // Check if TCP socket is ready (incoming download request)
-        if (FD_ISSET(tcp_sock, &rfds)) {
-            handle_download(tcp_sock);
+    // Add logic here to deregister all registered content
+    char content_list[][20] = {"content1", "content2"}; // Replace with actual registered content
+    int content_count = 2; // Update dynamically based on registered contents
+
+    for (int i = 0; i < content_count; i++) {
+        deregister_content(udp_sock, &index_server_addr, content_list[i]);
+    }
+
+    printf("Quitting...\n");
+    break;
+}
+        
+        } else {
+            printf("Invalid choice. Try again.\n");
         }
     }
 
