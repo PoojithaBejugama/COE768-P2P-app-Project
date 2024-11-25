@@ -48,25 +48,38 @@ void handle_download(int tcp_sock) {
     close(client_sock);
 }
 
-// Function to register content and get dynamic port
-void register_content(int udp_sock, struct sockaddr_in *index_server_addr, const char *content_name, int tcp_sock) {
+void register_content(int udp_sock, struct sockaddr_in *index_server_addr, const char *content_name, int tcp_sock, int fixed_tcp_port) {
     struct sockaddr_in tcp_addr;
-    socklen_t len = sizeof(tcp_addr);
 
-    // Get the dynamically assigned port
-    getsockname(tcp_sock, (struct sockaddr *)&tcp_addr, &len);
-    int assigned_port = ntohs(tcp_addr.sin_port);
+    // Bind the TCP socket to the fixed port
+    memset(&tcp_addr, 0, sizeof(tcp_addr));
+    tcp_addr.sin_family = AF_INET;
+    tcp_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    tcp_addr.sin_port = htons(fixed_tcp_port);
+
+    if (bind(tcp_sock, (struct sockaddr *)&tcp_addr, sizeof(tcp_addr)) < 0) {
+        perror("TCP bind failed");
+        close(tcp_sock);
+        exit(EXIT_FAILURE);
+    }
+
+    // Start listening on the fixed TCP port
+    if (listen(tcp_sock, 5) < 0) {
+        perror("Failed to listen on TCP socket");
+        close(tcp_sock);
+        exit(EXIT_FAILURE);
+    }
+    printf("Listening on fixed TCP port: %d\n", fixed_tcp_port);
 
     // Prepare the registration message
     char buffer[BUFFER_SIZE] = {0};
     buffer[0] = 'R'; // 'R' for registration
-    snprintf(buffer + 1, BUFFER_SIZE - 1, "%s,%d", content_name, assigned_port);
+    snprintf(buffer + 1, BUFFER_SIZE - 1, "%s,%d", content_name, fixed_tcp_port);
 
-    // Send registration to the Index Server
+    // Send the registration to the Index Server
     sendto(udp_sock, buffer, strlen(buffer), 0, (struct sockaddr *)index_server_addr, sizeof(*index_server_addr));
-    printf("Registered content '%s' with port %d\n", content_name, assigned_port);
+    printf("Registered content '%s' on fixed TCP port %d\n", content_name, fixed_tcp_port);
 }
-
 // Function to search and download content
 void search_content(int udp_sock, struct sockaddr_in *index_server_addr, const char *content_name) {
     char buffer[BUFFER_SIZE] = {0};
@@ -148,11 +161,15 @@ void deregister_content(int udp_sock, struct sockaddr_in *index_server_addr, con
 // Main function
 int main() {
     int udp_sock, tcp_sock;
-    struct sockaddr_in index_server_addr, tcp_addr;
+    struct sockaddr_in index_server_addr;
     char server_ip[16];
     int server_port;
 
-    // Ask user for IP and port of index server
+    // Fixed port numbers
+    const int udp_port = 8080; // Fixed UDP port
+    const int tcp_port = 9090; // Fixed TCP port
+
+    // Ask user for IP and port of the Index Server
     printf("Enter Index Server IP: ");
     scanf("%15s", server_ip);
     printf("Enter Index Server Port: ");
@@ -165,7 +182,7 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    // Configure index server address
+    // Configure Index Server address
     memset(&index_server_addr, 0, sizeof(index_server_addr));
     index_server_addr.sin_family = AF_INET;
     index_server_addr.sin_port = htons(server_port);
@@ -178,25 +195,27 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    // Bind the TCP socket with a dynamically assigned port
+    // Bind the TCP socket to the fixed port
+    struct sockaddr_in tcp_addr;
     memset(&tcp_addr, 0, sizeof(tcp_addr));
     tcp_addr.sin_family = AF_INET;
     tcp_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    tcp_addr.sin_port = htons(0); // Let OS assign a port
+    tcp_addr.sin_port = htons(tcp_port);
+
     if (bind(tcp_sock, (struct sockaddr *)&tcp_addr, sizeof(tcp_addr)) < 0) {
         perror("TCP bind failed");
         close(tcp_sock);
         exit(EXIT_FAILURE);
     }
 
-    // Listen for incoming connections
+    // Start listening on the fixed TCP port
     if (listen(tcp_sock, 5) < 0) {
         perror("TCP listen failed");
         close(tcp_sock);
         exit(EXIT_FAILURE);
     }
 
-    printf("TCP socket is listening for incoming connections...\n");
+    printf("Listening on fixed TCP port: %d\n", tcp_port);
 
     // Set up select() to handle stdin and incoming TCP connections
     fd_set afds, rfds;
@@ -206,6 +225,7 @@ int main() {
 
     while (1) {
         rfds = afds; // Copy afds to rfds for select
+
         printf("\n--- Peer Menu ---\n");
         printf("1. Register Content\n");
         printf("2. Search Content\n");
@@ -227,7 +247,7 @@ int main() {
             if (choice == 1) {
                 printf("Enter content name to register: ");
                 scanf("%19s", content_name);
-                register_content(udp_sock, &index_server_addr, content_name, tcp_sock);
+                register_content(udp_sock, &index_server_addr, content_name, tcp_sock, tcp_port);
             } else if (choice == 2) {
                 printf("Enter content name to search: ");
                 scanf("%19s", content_name);
@@ -244,7 +264,7 @@ int main() {
             }
         }
 
-        // Check if TCP socket is ready (incoming connection)
+        // Check if TCP socket is ready (incoming download request)
         if (FD_ISSET(tcp_sock, &rfds)) {
             handle_download(tcp_sock);
         }
