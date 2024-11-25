@@ -193,34 +193,34 @@ void search_content(int udp_sock, struct sockaddr_in *index_server_addr, const c
     } else {
         fprintf(stderr, "Failed to parse Index Server response: %s\n", buffer);
     }
-
+}
     
-        // Function to deregister content
-        void deregister_content(int udp_sock, struct sockaddr_in *index_server_addr, const char *content_name) {
-        char buffer[BUFFER_SIZE] = {0};
-    
-        // Prepare the deregistration message
-        buffer[0] = 'T'; // 'T' for deregistration
-        snprintf(buffer + 1, BUFFER_SIZE - 1, "%s", content_name);
-    
-        // Send deregistration to the Index Server
-        int bytes_sent = sendto(udp_sock, buffer, strlen(buffer), 0, (struct sockaddr *)index_server_addr, sizeof(*index_server_addr));
-        if (bytes_sent < 0) {
-            perror("Failed to send deregistration data");
-            return;
-        }
-        log_raw_data("Sent Deregistration", buffer, bytes_sent);
-    
-        // Receive acknowledgment
-        int bytes_received = recvfrom(udp_sock, buffer, BUFFER_SIZE, 0, NULL, NULL);
-        if (bytes_received < 0) {
-            perror("Failed to receive acknowledgment");
-            return;
-        }
-    
-        printf("Index server response: %s\n", buffer);
-        log_raw_data("Received Acknowledgment", buffer, bytes_received);
-    }
+// Function to deregister content
+void deregister_content(int udp_sock, struct sockaddr_in *index_server_addr, const char *content_name) {
+	char buffer[BUFFER_SIZE] = {0};
+	
+	// Prepare the deregistration message
+	buffer[0] = 'T'; // 'T' for deregistration
+	snprintf(buffer + 1, BUFFER_SIZE - 1, "%s", content_name);
+	
+	// Send deregistration to the Index Server
+	int bytes_sent = sendto(udp_sock, buffer, strlen(buffer), 0, (struct sockaddr *)index_server_addr, sizeof(*index_server_addr));
+	if (bytes_sent < 0) {
+	    perror("Failed to send deregistration data");
+	    return;
+	}
+	log_raw_data("Sent Deregistration", buffer, bytes_sent);
+	
+	// Receive acknowledgment
+	int bytes_received = recvfrom(udp_sock, buffer, BUFFER_SIZE, 0, NULL, NULL);
+	if (bytes_received < 0) {
+	    perror("Failed to receive acknowledgment");
+	    return;
+	}
+	
+	printf("Index server response: %s\n", buffer);
+	log_raw_data("Received Acknowledgment", buffer, bytes_received);
+}
 
     
 }
