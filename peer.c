@@ -19,7 +19,6 @@ void handle_download(int tcp_sock) {
         perror("Failed to accept connection");
         return;
     }
-
     printf("Accepted connection from %s:%d\n",
            inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
 
@@ -82,67 +81,85 @@ void register_content(int udp_sock, struct sockaddr_in *index_server_addr, const
 }
 // Function to search and download content
 void search_content(int udp_sock, struct sockaddr_in *index_server_addr, const char *content_name) {
-    char buffer[BUFFER_SIZE] = {0};
+    char buffer[BUFFER_SIZE] = {0}; // Buffer to store messages
 
-    // Send search request to the Index Server
-    snprintf(buffer, BUFFER_SIZE, "S%s", content_name);
+    // Prepare the search request message to send to the Index Server
+    snprintf(buffer, BUFFER_SIZE, "S%s", content_name); // 'S' indicates a search request
     sendto(udp_sock, buffer, strlen(buffer), 0, (struct sockaddr *)index_server_addr, sizeof(*index_server_addr));
 
-    // Receive search response
+    // Receive the response from the Index Server
     recvfrom(udp_sock, buffer, BUFFER_SIZE, 0, NULL, NULL);
-    printf("Index server response: %s\n", buffer);
 
-    // Parse response and connect to content server if found
+    // Log the raw response for debugging
+    printf("[DEBUG] Raw Index Server response: %s\n", buffer);
+
+    // Check if the response contains "Content server" (indicating the content is found)
     if (strstr(buffer, "Content server")) {
-        char server_ip[16];
-        int server_port;
-        sscanf(buffer, "Content server: IP %15s, Port %d", server_ip, &server_port);
+        char server_ip[16];   // To store the content server's IP address
+        int server_port;      // To store the content server's port
 
+        // Parse the response to extract the IP address and port
+        int result = sscanf(buffer, "Content server: IP %15s, Port %d", server_ip, &server_port);
+        if (result != 2) { // Ensure that both IP and port are successfully parsed
+            printf("Error: Failed to parse server IP and port from response\n");
+            return; // Exit the function if parsing fails
+        }
+
+        // Log the parsed IP and port for verification
+        printf("[DEBUG] Extracted IP: %s, Port: %d\n", server_ip, server_port);
+
+        // Log the intention to connect to the content server
         printf("Connecting to Content Server: IP=%s, Port=%d\n", server_ip, server_port);
 
-        // Establish TCP connection with content server
+        // Create a new TCP socket for connecting to the content server
         int tcp_sock = socket(AF_INET, SOCK_STREAM, 0);
-        if (tcp_sock < 0) {
+        if (tcp_sock < 0) { // Check if socket creation failed
             perror("Failed to create TCP socket");
-            return;
+            return; // Exit the function if the socket creation fails
         }
 
+        // Configure the address of the content server
         struct sockaddr_in content_server_addr;
-        content_server_addr.sin_family = AF_INET;
-        content_server_addr.sin_port = htons(server_port);
-        inet_pton(AF_INET, server_ip, &content_server_addr.sin_addr);
+        content_server_addr.sin_family = AF_INET;                // IPv4 address family
+        content_server_addr.sin_port = htons(server_port);       // Convert port to network byte order
+        inet_pton(AF_INET, server_ip, &content_server_addr.sin_addr); // Convert IP address to binary format
 
+        // Attempt to connect to the content server
         if (connect(tcp_sock, (struct sockaddr *)&content_server_addr, sizeof(content_server_addr)) < 0) {
-            perror("TCP connection failed");
-            close(tcp_sock);
-            return;
+            perror("TCP connection failed"); // Log connection failure
+            close(tcp_sock); // Close the socket
+            return; // Exit the function if connection fails
         }
 
-        // Request the content
+        // Send the content name as the request to the content server
         write(tcp_sock, content_name, strlen(content_name));
         printf("Downloading content: %s\n", content_name);
 
+        // Open a file locally to save the downloaded content
         FILE *fp = fopen(content_name, "wb");
-        if (!fp) {
+        if (!fp) { // Check if the file could not be created
             perror("Failed to open file");
-            close(tcp_sock);
-            return;
+            close(tcp_sock); // Close the TCP socket
+            return; // Exit the function if file creation fails
         }
 
-        // Receive and write the file
+        // Receive the file content in chunks and write it to the local file
         while (1) {
-            int bytes_received = read(tcp_sock, buffer, BUFFER_SIZE);
-            if (bytes_received <= 0) break;
-            fwrite(buffer, 1, bytes_received, fp);
+            int bytes_received = read(tcp_sock, buffer, BUFFER_SIZE); // Read a chunk of data
+            if (bytes_received <= 0) break; // Exit loop if end of file or error
+            fwrite(buffer, 1, bytes_received, fp); // Write the received chunk to the file
         }
 
+        // Close the file and the TCP socket after the transfer is complete
         fclose(fp);
         close(tcp_sock);
-        printf("Download completed.\n");
+        printf("Download completed.\n"); // Log the successful completion of the download
     } else {
+        // If the response does not indicate a content server, log content not found
         printf("Content not found.\n");
     }
 }
+
 
 // Function to deregister content
 void deregister_content(int udp_sock, struct sockaddr_in *index_server_addr, const char *content_name) {
