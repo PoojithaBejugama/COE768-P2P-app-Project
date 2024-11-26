@@ -50,6 +50,20 @@ int mode=0, indx_sock, did_list=0, file_indx;
 fd_set afds, rfds;
 struct pdu req_pdu, res_pdu;
 
+void serialize() {
+	req_buffer[0] = req_pdu.type;
+	int i;
+	for(i = 0 ; i < BUFLEN-1; i++) req_buffer[i+1] = req_pdu.data[i];
+}
+
+void deserialize() {
+	res_pdu.type = res_buffer[0];
+	int i;
+	memcpy(res_pdu.data, res_buffer+1, sizeof(res_pdu.data));
+	//for(i = 0; i < BUFLEN-1; i++) res_pdu.data[i] = res_buffer[i+1];
+	memset(res_buffer, 0, sizeof(res_buffer));
+}
+
 void receive_and_display_content_list() {
     if (read(indx_sock, res_buffer, BUFLEN) < 0) {
         printf("Error reading response from the index server.\n");
@@ -74,19 +88,6 @@ void receive_and_display_content_list() {
     }
 }
 
-void serialize() {
-	req_buffer[0] = req_pdu.type;
-	int i;
-	for(i = 0 ; i < BUFLEN-1; i++) req_buffer[i+1] = req_pdu.data[i];
-}
-
-void deserialize() {
-	res_pdu.type = res_buffer[0];
-	int i;
-	memcpy(res_pdu.data, res_buffer+1, sizeof(res_pdu.data));
-	//for(i = 0; i < BUFLEN-1; i++) res_pdu.data[i] = res_buffer[i+1];
-	memset(res_buffer, 0, sizeof(res_buffer));
-}
 
 void display_menu() {
 
