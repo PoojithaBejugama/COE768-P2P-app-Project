@@ -50,6 +50,30 @@ int mode=0, indx_sock, did_list=0, file_indx;
 fd_set afds, rfds;
 struct pdu req_pdu, res_pdu;
 
+void receive_and_display_content_list() {
+    if (read(indx_sock, res_buffer, BUFLEN) < 0) {
+        printf("Error reading response from the index server.\n");
+        return;
+    }
+
+    deserialize();  // Decode the response into the PDU structure
+
+    if (res_pdu.type == 'O') {  // Check if the response type is a content list
+        printf("\n===== Content List from Index Server =====\n");
+        char *token = strtok(res_pdu.data, ":");
+        int index = 1;
+        while (token != NULL) {
+            printf("%d. %s\n", index++, token);
+            token = strtok(NULL, ":");
+        }
+        printf("=========================================\n");
+    } else if (res_pdu.type == 'E') {  // Handle errors
+        printf("Error: %s\n", res_pdu.data);
+    } else {
+        printf("Unexpected response from the index server.\n");
+    }
+}
+
 void serialize() {
 	req_buffer[0] = req_pdu.type;
 	int i;
@@ -72,8 +96,8 @@ void display_menu() {
 		printf("1. Register Content\n");
 		printf("2. Deregister Content\n");
 		printf("3. List and Download Available Content\n");
-		printf("4. Quit\n");
-		printf("5. List all available content\n");
+		printf("4. List all available content\n");
+		printf("5. Quit\n");
 		printf("--------------------------\n");
 		printf("Please enter your choice: \n");
 	break;
@@ -94,7 +118,12 @@ void display_menu() {
 			printf("Select the corresponding file number to download or 0 to exit: \n");
 		}
 	break;
-	case 4:
+	case 4:  // New case for listing content
+            req_pdu.type = 'O';  // 'O' indicates a list content request
+            send_udp_request();  // Send the request to the index server
+            receive_and_display_content_list(); // New function to handle response
+        break;
+	case 5:
 	printf("------Quitting ------\n");
 	printf("Deregistering content");
 	break;
