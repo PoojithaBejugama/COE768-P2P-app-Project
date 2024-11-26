@@ -309,7 +309,20 @@ main(int argc, char *argv[])
 													
 /* Bind the socket */
 	if (bind(s, (struct sockaddr *)&sin, sizeof(sin)) < 0)
-	fprintf(stderr, "can't bind to %d port\n",port);;
+	fprintf(stderr, "can't bind to %d port\n",port);
+
+	/* Retrieve the bound IP address and port */
+	struct sockaddr_in bound_addr;
+	socklen_t addr_len = sizeof(bound_addr);
+	if (getsockname(s, (struct sockaddr *)&bound_addr, &addr_len) == 0) {
+	    char ip[INET_ADDRSTRLEN];
+	    inet_ntop(AF_INET, &bound_addr.sin_addr, ip, sizeof(ip));
+	    fprintf(stderr, "Server running on IP: %s, Port: %d\n", ip, ntohs(bound_addr.sin_port));
+	} else {
+	    perror("getsockname");
+	    exit(1);
+	}
+	
 	listen(s, 5);	
 	alen = sizeof(fsin);
 	fprintf(stderr, "=====Welcome to Index server=====\n");
