@@ -8,7 +8,7 @@
 
 #define BUFFER_SIZE 1024
 #define FIXED_PORT 19000 // Change to 20000 for Peer2
-
+//TCP doesn't work
 // Utility function to log raw data
 void log_raw_data(const char *prefix, const char *data, int length) {
     printf("%s [Raw Data]: ", prefix);
