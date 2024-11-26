@@ -24,21 +24,21 @@ struct filePdu {
     char data[FILEBUFFLEN - 1];
 };
 
-void handle_register();
-void handle_deregister();
-void handle_list_download();
-void handle_std_input();
-void list_available_content(int udp_socket, struct sockaddr_in server);
-void search_content(int file_index);
-void download_file(struct sockaddr_in client_addr, char filename[20]);
-int upload_file(int tcp_socket, struct sockaddr_in client, char filename[20]);
-int listen_for_requests(int tcp_socket, struct sockaddr_in sock_addr, char filename[20]);
+// void handle_register();
+// void handle_deregister();
+// void handle_list_download();
+// void handle_std_input();
+// void list_available_content(int udp_socket, struct sockaddr_in server);
+// void search_content(int file_index);
+// void download_file(struct sockaddr_in client_addr, char filename[20]);
+// int upload_file(int tcp_socket, struct sockaddr_in client, char filename[20]);
+// int listen_for_requests(int tcp_socket, struct sockaddr_in sock_addr, char filename[20]);
 
-void send_udp_request();
-void send_tcp_request(int socket);
+// void send_udp_request();
+// void send_tcp_request(int socket);
 
-void serialize();
-void deserialize();
+// void serialize();
+// void deserialize();
 
 char peer_name[20], user_input[100], request_buffer[100], response_buffer[100], ip_address[20], file_names[MAX_FILES][20];
 int menu_mode = 0, udp_socket, file_index;
