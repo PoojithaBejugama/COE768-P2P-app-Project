@@ -31,13 +31,11 @@ void handle_registration();
 void handle_deregistration(void);
 void handle_search_and_download(void);
 
-void 
-(void);
 void handle_list_content(int udp_socket, struct sockaddr_in index_server);
 void handle_search_content(int file_indx);
 void handle_download_content(struct sockaddr_in sockarr, char filename[11]);
 int handle_upload_content(int tcp_socket, struct sockaddr_in client, char filename[11]);
-int listen_for_incomming_download_req(int tcp_socket, struct sockaddr_in sock_descriptor, char filename[11]);
+int listen_for_incomming_requests(int tcp_socket, struct sockaddr_in sock_descriptor, char filename[11]);
 
 void send_udp_request();
 void send_tcp_request(int socket);
@@ -245,7 +243,7 @@ void handle_registration() {
 		switch(fork()) {
 			case 0:
 				printf("child process listening for incomming requests to socket\n");
-				exit(listen_for_incomming_download_req(sock_id, reg_addr, std_input));
+				exit(listen_for_incomming_requests(sock_id, reg_addr, std_input));
 			default:
 				printf("Parent process\n");
 				break;
@@ -256,7 +254,7 @@ void handle_registration() {
 	} 
 }
 
-int listen_for_incomming_download_req(int sock_id, struct sockaddr_in sock_descriptor, char filename[11]) {
+int listen_for_incomming_requests(int sock_id, struct sockaddr_in sock_descriptor, char filename[11]) {
 	struct sockaddr_in reg_addr, client;
 	int client_len, new_sd, n;
 	char req_buf[BUFLEN], tmpfilename[11];
