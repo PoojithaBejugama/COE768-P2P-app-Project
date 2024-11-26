@@ -282,6 +282,7 @@ main(int argc, char *argv[])
 	struct  sockaddr_in sin; /* an Internet endpoint address         */
         int     s, type;        /* socket descriptor and socket type    */
 	int 	port=3000;
+	const char *ip_address = "10.1.1.34"; // Replace with your desired IP address
 	
 
                                                                                 
@@ -299,7 +300,12 @@ main(int argc, char *argv[])
 
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
-	sin.sin_addr.s_addr = INADDR_ANY;
+	//sin.sin_addr.s_addr = INADDR_ANY;
+	    /* Assign a specific IP address */
+	    if (inet_pton(AF_INET, ip_address, &sin.sin_addr) <= 0) {
+	        perror("Invalid IP address");
+	        exit(1);
+	    }
 	sin.sin_port = htons(port);
 																								
 /* Allocate a socket */
