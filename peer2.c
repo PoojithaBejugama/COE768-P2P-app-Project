@@ -68,36 +68,40 @@ void display_menu() {
 
 	switch(mode) {
 	case 0:
-		printf("===== Menu =====\n");
+		printf("------- Menu --------\n");
 		printf("1. Register Content\n");
 		printf("2. Deregister Content\n");
 		printf("3. List and Download Available Content\n");
-		printf("0. Quit\n");
-		printf("================\n");
-		printf("Enter your choice: \n");
+		printf("4. Quit\n");
+		printf("--------------------------\n");
+		printf("Please enter your choice: \n");
 	break;
 	case 1:
-		printf("===== Register Content =====\n");
+		printf("-------------Register Content ---------------n");
 		printf("Please enter a file name: \n");
 	break;
 	case 2:
-		printf("===== De-Register Content =====\n");
+		printf("--------------De-Register Content ------------------\n");
 		printf("Please enter the filename: \n");
 	break;
 	case 3:
 		if(did_list == 0) {
-		printf("====Listing available content====\n");
+		printf("----------------Listing available content----------------\n");
 		handle_search_and_download();
 		did_list = 0;
 		} else {
 			printf("Select the corresponding file number to download or 0 to exit: \n");
 		}
 	break;
+	case 4:
+	printf("------Quitting ------\n");
+	printf("Deregistering content");
+	break;
 	}
     
 }
 
-void handle_std_input() {
+void handle_user_input() {
 	int new_mode;
 	switch(mode) {
 		case 0: 
@@ -168,7 +172,7 @@ void handle_socket_input(int socket) {
 }
 
 void handle_search_and_download() {
-	int i=0, h=0, loopactive=1, j=0, files_processed=0, str_size;
+	int i=0, h=0, loop=1, j=0, files_processed=0, str_size;
 	int offset = 0;
 	req_pdu.type = 'O';
 	send_udp_request();
@@ -181,10 +185,10 @@ void handle_search_and_download() {
 	printf("response recived of type: %c\n", res_pdu.type);
 	if(res_pdu.type == 'O') {
 
-		while(loopactive) {
+		while(loop) {
 			if(res_pdu.data[h] == '\0') {
 				printf("%d: %s\n",i+1, filenames[i]);
-				loopactive = 0;
+				loop = 0;
 				continue;
 			} else if(res_pdu.data[h] == ':') {
 				printf("%d: %s\n",i+1, filenames[i]);
@@ -211,7 +215,7 @@ void handle_search_and_download() {
 void handle_registration() {
 	//socket init stuff
 	struct sockaddr_in reg_addr, client;
-	int sock_id, alen, loopactive=1, j=0, client_len, clien, new_sd;
+	int sock_id, alen, loop=1, j=0, client_len, clien, new_sd;
 	sock_id = socket(AF_INET, SOCK_STREAM, 0);
 	reg_addr.sin_family = AF_INET;
 	reg_addr.sin_port = htons(0);
@@ -220,9 +224,8 @@ void handle_registration() {
 	alen = sizeof (struct sockaddr_in);
 	getsockname(sock_id, (struct sockaddr *) &reg_addr, (socklen_t *) &alen);
 
-	//setting pdu type
+	// pdu type to R
 	req_pdu.type = 'R';
-	//copying informaiton
 	memcpy(req_pdu.data, peer_name , strlen(peer_name));
 	memcpy(req_pdu.data+11, std_input , strlen(std_input));
 	memcpy(req_pdu.data+22, ip_add , sizeof(ip_add));
@@ -526,7 +529,7 @@ main(int argc, char **argv){
 	break;  // Exit the loop on select failure
 	}
 	if(FD_ISSET(0, &rfds)) {
-		handle_std_input();
+		handle_user_input();
 	} else {
 		for(fds_indx=1; fds_indx < FD_SETSIZE; fds_indx++) {
 			if(FD_ISSET(fds_indx, &rfds)) {
