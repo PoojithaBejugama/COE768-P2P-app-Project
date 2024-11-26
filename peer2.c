@@ -73,6 +73,7 @@ void display_menu() {
 		printf("2. Deregister Content\n");
 		printf("3. List and Download Available Content\n");
 		printf("4. Quit\n");
+		printf("5. List all available content\n");
 		printf("--------------------------\n");
 		printf("Please enter your choice: \n");
 	break;
