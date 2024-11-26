@@ -27,11 +27,12 @@ struct filePdu {
 	char data[FILEDATABUFFLEN-1];
 };
 
-void handle_register_content();
-void handle_deregister_content(void);
-void handle_list_and_download(void);
-void clode_application(void);
-void handle_std_input(void);
+void handle_registration();
+void handle_deregistration(void);
+void handle_search_and_download(void);
+
+void 
+(void);
 void handle_list_content(int udp_socket, struct sockaddr_in index_server);
 void handle_search_content(int file_indx);
 void handle_download_content(struct sockaddr_in sockarr, char filename[11]);
@@ -88,7 +89,7 @@ void display_menu() {
 	case 3:
 		if(did_list == 0) {
 		printf("====Listing available content====\n");
-		handle_list_and_download();
+		handle_search_and_download();
 		did_list = 0;
 		} else {
 			printf("Select the corresponding file number to download or 0 to exit: \n");
@@ -112,12 +113,12 @@ void handle_std_input() {
 		case 1:
 			scanf("%s", std_input);
 			printf("registering file: %s\n", std_input);
-			handle_register_content();
+			handle_registration();
 			printf("file registered\n");
 		break;
 		case 2:
 			scanf("%s", std_input);
-			handle_deregister_content();
+			handle_deregistration();
 		break;
 		case 3:
 			scanf("%d", &file_indx);
@@ -168,7 +169,7 @@ void handle_socket_input(int socket) {
 	}
 }
 
-void handle_list_and_download() {
+void handle_search_and_download() {
 	int i=0, h=0, loopactive=1, j=0, files_processed=0, str_size;
 	int offset = 0;
 	req_pdu.type = 'O';
@@ -209,7 +210,7 @@ void handle_list_and_download() {
 
 }
 
-void handle_register_content() {
+void handle_registration() {
 	//socket init stuff
 	struct sockaddr_in reg_addr, client;
 	int sock_id, alen, loopactive=1, j=0, client_len, clien, new_sd;
@@ -321,7 +322,7 @@ int handle_upload_content(int tcp_socket, struct sockaddr_in client, char filena
 	return 0;
 }
 
-void handle_deregister_content() {
+void handle_deregistration() {
 	printf("\n=====Deregistering file=====\n");
 	printf("Filename is: %s\n", std_input);
 	req_pdu.type = 'T';
@@ -388,7 +389,7 @@ void handle_download_content(struct sockaddr_in sockarr, char filename[11]) {
 	printf("Received %d/%d bytes....\n", total_bytes_received, file_size);
 	//need to set input buffer for register operation
 	strncpy(std_input, filename, sizeof(std_input));
-	handle_register_content();
+	handle_registration();
 	mode=0;
 	close(sock);
 }
