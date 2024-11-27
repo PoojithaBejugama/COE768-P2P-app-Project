@@ -46,41 +46,9 @@ void receive_tcp_response(int socket, char* response, size_t response_size);
 void handle_error_response(char response_type);
 
 char peer_name[11], std_buf[100], req_buffer[100], file_req_buffer[1640], file_res_buffer[1640], res_buffer[100], std_input[100], ip_add[10], filenames[MAXFILES][11];
-int mode=0, indx_sock, did_list=0, file_indx;
+int selection=0, indx_sock, did_list=0, file_indx;
 fd_set afds, rfds;
 struct pdu req_pdu, res_pdu;
-
-void receive_and_display_content_list() {
-    if (read(indx_sock, res_buffer, BUFLEN) < 0) {
-        printf("Error reading response from the index server.\n");
-        return;
-    }
-
-    deserialize();  // Decode the response into the PDU structure
-
-    if (res_pdu.type == 'O') {  // Check if the response type is a content list
-        printf("\n===== Content List from Index Server =====\n");
-        char *token = strtok(res_pdu.data, ":");
-        int index = 0;
-
-        // Clear the local filenames array
-        memset(filenames, 0, sizeof(filenames));
-
-        // Parse and update the local list
-        while (token != NULL && index < MAXFILES) {
-            strncpy(filenames[index], token, sizeof(filenames[index]) - 1);
-            printf("%d. %s\n", index + 1, filenames[index]);
-            token = strtok(NULL, ":");
-            index++;
-        }
-        printf("=========================================\n");
-    } else if (res_pdu.type == 'E') {  // Handle errors
-        printf("Error: %s\n", res_pdu.data);
-    } else {
-        printf("Unexpected response from the index server.\n");
-    }
-}
-
 
 void serialize() {
 	req_buffer[0] = req_pdu.type;
@@ -96,9 +64,34 @@ void deserialize() {
 	memset(res_buffer, 0, sizeof(res_buffer));
 }
 
-void display_menu() {
+void receive_and_display_content_list() {
+    if (read(indx_sock, res_buffer, BUFLEN) < 0) {
+        printf("Error reading response from the index server.\n");
+        return;
+    }
 
-	switch(mode) {
+    deserialize();  // Decode the response into the PDU structure
+
+    if (res_pdu.type == 'O') {  // Check if the response type is a content list
+        printf("\n===== Content List from Index Server =====\n");
+        char *token = strtok(res_pdu.data, ":");
+        int index = 1;
+        while (token != NULL) {
+            printf("%d. %s\n", index++, token);
+            token = strtok(NULL, ":");
+        }
+        printf("---------------------------------------\n");
+    } else if (res_pdu.type == 'E') {  // Handle errors
+        printf("Error: %s\n", res_pdu.data);
+    } else {
+        printf("Unexpected response from the index server.\n");
+    }
+}
+
+
+void display_menu() {
+//based on what user selects.
+	switch(selection) {
 	case 0:
 		printf("------- Menu --------\n");
 		printf("1. Register Content\n");
@@ -119,17 +112,16 @@ void display_menu() {
 	break;
 	case 3:
 		if(did_list == 0) {
-		printf("----------------Listing available content----------------\n");
+		printf("----------------Available content----------------\n");
 		handle_search_and_download();
 		did_list = 0;
+		printf("Select the corresponding file number to download or 0 to exit:");
 		} else {
 			printf("Select the corresponding file number to download or 0 to exit: \n");
 		}
 	break;
 	case 4:  // New case for listing content
-            req_pdu.type = 'O';  // 'O' indicates a list content request
-            send_udp_request();  // Send the request to the index server
-            receive_and_display_content_list(); // New function to handle response
+            printf("----------------Online content----------------\n");
         break;
 	case 5:
 	printf("------Quitting ------\n");
@@ -140,12 +132,12 @@ void display_menu() {
 }
 
 void handle_user_input() {
-	int new_mode;
-	switch(mode) {
+	int new_selection;
+	switch(selection) {
 		case 0: 
-			scanf("%d", &new_mode);
-			if(new_mode >=0 && new_mode <= 3) {
-				mode = new_mode;
+			scanf("%d", &new_selection);
+			if(new_selection >=0 && new_selection <= 3) {
+				selection = new_selection;
 			} else {
 				printf("Invalid input. Please select an appropriate option\n");
 			}
@@ -163,7 +155,7 @@ void handle_user_input() {
 		case 3:
 			scanf("%d", &file_indx);
 			if(file_indx == 0) {
-				mode=0;
+				selection=0;
 			} else {
 				handle_search_content(file_indx-1);
 			}
@@ -182,7 +174,7 @@ void handle_socket_input(int socket) {
 	}
 	deserialize();
 	printf("received request of type: %c\n", res_pdu.type);
-	switch(mode) {
+	switch(selection) {
 		case 0: {
 			if(res_pdu.type == 'D') {
 				printf("responding to download request...\n");
@@ -194,10 +186,10 @@ void handle_socket_input(int socket) {
 		case 1: {
 			if(res_pdu.type == 'A') {
 				printf("Acknowledgement received\n");
-				mode=0;
+				selection=0;
 			} else if(res_pdu.type == 'E') {
 				printf("Error registering content: %s\n", res_pdu.data);
-				mode = 0;
+				selection = 0;
 			} else {
 				printf("Unsupported request\n");
 			}
@@ -216,7 +208,7 @@ void handle_search_and_download() {
 	send_udp_request();
 	if(read(indx_sock, res_buffer, BUFLEN) < 0){
 		printf("error\n");
-		mode=0;
+		selection=0;
 		return;
 	}
 	deserialize();
@@ -240,12 +232,12 @@ void handle_search_and_download() {
 			} 
 			h++;
 		}
-		//set this to 1 to disable printing the mode header again and calling this function again.
+		//set this to 1 to disable printing the selection header again and calling this function again.
 		did_list = 1;
 	} else if(res_pdu.type == 'E') {
 		printf("Received error\n");
 		printf("%s", res_pdu.data);
-		mode=0;
+		selection=0;
 	}
 
 }
@@ -276,11 +268,11 @@ void handle_registration() {
 	//waiting for response from udp
 	if(read(indx_sock, res_buffer, BUFLEN) < 0) {
 		printf("Error\n");
-		mode=0;
+		selection=0;
 	}
 	if(res_buffer[0] == 'A'){
 		printf("Acknowledgment received\n");
-		mode=0;
+		selection=0;
 		switch(fork()) {
 			case 0:
 				printf("child process listening for incomming requests to socket\n");
@@ -290,7 +282,7 @@ void handle_registration() {
 				break;
 		}
 	} else if(res_buffer[0] == 'E') {
-		mode=0;
+		selection=0;
 		printf("File already registered\n");
 	} 
 }
@@ -374,20 +366,16 @@ void handle_deregistration() {
 	//reading response from udp index server
 	if(read(indx_sock, res_buffer, BUFLEN) < 0) {
 		printf("Error reading search file\n");
-		mode=0;
+		selection=0;
 		return;
 	}
 	deserialize();
 	if(res_pdu.type == 'A') {
 		printf("Acknowledgment received. File deregistered!\n");
-         // Fetch and update the content list
-        req_pdu.type = 'O';  // Request updated content list
-        send_udp_request();
-        receive_and_display_content_list();
 	} else if(res_pdu.type == 'E') {
 		printf("Error received: %s\n", res_buffer+1);
 	}
-	mode=0;
+	selection=0;
 }
 
 void handle_download_content(struct sockaddr_in sockarr, char filename[11]) {
@@ -433,7 +421,7 @@ void handle_download_content(struct sockaddr_in sockarr, char filename[11]) {
 	//need to set input buffer for register operation
 	strncpy(std_input, filename, sizeof(std_input));
 	handle_registration();
-	mode=0;
+	selection=0;
 	close(sock);
 }
 
@@ -457,7 +445,7 @@ void handle_search_content(int file_indx) {
 	//read response from udp server
 	if(read(indx_sock, res_buffer, BUFLEN) < 0) {
 		printf("Error reading search file\n");
-		mode=0;
+		selection=0;
 		return;
 	}
 	deserialize();
