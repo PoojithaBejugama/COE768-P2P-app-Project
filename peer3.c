@@ -250,50 +250,60 @@ void handle_search_and_download() {
 
 }
 
+
 void handle_registration() {
-	//socket init stuff
-	struct sockaddr_in reg_addr, client;
-	int sock_id, alen, loop=1, j=0, client_len, clien, new_sd;
-	sock_id = socket(AF_INET, SOCK_STREAM, 0);
-	reg_addr.sin_family = AF_INET;
-	reg_addr.sin_port = htons(0);
-	reg_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	bind(sock_id, (struct sockaddr *)&reg_addr, sizeof(reg_addr));
-	alen = sizeof (struct sockaddr_in);
-	getsockname(sock_id, (struct sockaddr *) &reg_addr, (socklen_t *) &alen);
+    // Initialize socket address structure
+    struct sockaddr_in reg_addr;
+    int sock_id, alen;
 
-	// pdu type to R
-	req_pdu.type = 'R';
-	memcpy(req_pdu.data, peer_name , strlen(peer_name));
-	memcpy(req_pdu.data+11, std_input , strlen(std_input));
-	memcpy(req_pdu.data+22, ip_add , sizeof(ip_add));
-	memcpy(req_pdu.data+32, &reg_addr.sin_port , sizeof(reg_addr.sin_port));
-	printf("Port is %d\n", ntohs(reg_addr.sin_port));
+    // Create a TCP socket for file transfer
+    sock_id = socket(AF_INET, SOCK_STREAM, 0);
+    reg_addr.sin_family = AF_INET;
+    reg_addr.sin_port = htons(0); // Let the OS assign a dynamic port
+    reg_addr.sin_addr.s_addr = htonl(INADDR_ANY); // Bind to any available IP
+    bind(sock_id, (struct sockaddr *)&reg_addr, sizeof(reg_addr));
 
-	send_udp_request();
-	printf("Data send to server. Awaiting acknowledgement....\n");
+    // Retrieve the dynamically assigned port number
+    alen = sizeof(struct sockaddr_in);
+    getsockname(sock_id, (struct sockaddr *)&reg_addr, (socklen_t *)&alen);
 
-	//waiting for response from udp
-	if(read(indx_sock, res_buffer, BUFLEN) < 0) {
-		printf("Error\n");
-		mode=0;
-	}
-	if(res_buffer[0] == 'A'){
-		printf("Acknowledgment received\n");
-		mode=0;
-		switch(fork()) {
-			case 0:
-				printf("child process listening for incomming requests to socket\n");
-				exit(listen_for_incomming_requests(sock_id, reg_addr, std_input));
-			default:
-				printf("Parent process\n");
-				break;
-		}
-	} else if(res_buffer[0] == 'E') {
-		mode=0;
-		printf("File already registered\n");
-	} 
+    // Prepare the registration PDU (type 'R')
+    req_pdu.type = 'R'; // 'R' indicates a registration request
+    memcpy(req_pdu.data, peer_name, strlen(peer_name)); // Add peer name
+    memcpy(req_pdu.data + 11, std_input, strlen(std_input)); // Add file name
+    memcpy(req_pdu.data + 22, ip_add, sizeof(ip_add)); // Add peer's IP address
+    memcpy(req_pdu.data + 32, &reg_addr.sin_port, sizeof(reg_addr.sin_port)); // Add TCP port number
+
+    // Send registration PDU to the index server
+    send_udp_request();
+    printf("Data sent to server. Awaiting acknowledgment...\n");
+
+    // Wait for acknowledgment from the index server
+    if (read(indx_sock, res_buffer, BUFLEN) < 0) {
+        printf("Error\n");
+        mode = 0;
+        return;
+    }
+
+    if (res_buffer[0] == 'A') { // If acknowledgment is received
+        printf("Acknowledgment received. File registered successfully.\n");
+        mode = 0;
+
+        // Fork a child process to listen for incoming file requests
+        switch (fork()) {
+            case 0:
+                printf("Child process: Listening for incoming requests on socket...\n");
+                exit(listen_for_incomming_requests(sock_id, reg_addr, std_input));
+            default:
+                printf("Parent process: Continuing operations.\n");
+                break;
+        }
+    } else if (res_buffer[0] == 'E') { // If error is received
+        printf("Error: File already registered.\n");
+        mode = 0;
+    }
 }
+
 
 int listen_for_incomming_requests(int sock_id, struct sockaddr_in sock_descriptor, char filename[11]) {
 	struct sockaddr_in reg_addr, client;
@@ -329,66 +339,101 @@ int listen_for_incomming_requests(int sock_id, struct sockaddr_in sock_descripto
 	return 0;
 }
 
-int handle_upload_content(int tcp_socket, struct sockaddr_in client, char filename[11]) {
-	FILE 	*file_ptr;
-	file_ptr = fopen(filename, "rb");
-	int numBytes=0, totalBytes=0, file_size;
-	int32_t tmp_file_size;
-	char tmpFileBuffer[FILEDATABUFFLEN-1];
-	printf("\n===== Handling file download request =====\n");
-	if(file_ptr == NULL){
-		write(tcp_socket, "E", 1); 
-		close(tcp_socket);
-	} else {
-			//retreive file size
-			fseek(file_ptr, 0L, SEEK_END);
-			file_size = ftell(file_ptr);
-			tmp_file_size = htonl(file_size);
-			fseek(file_ptr, 0L, SEEK_SET);
-			write(tcp_socket, &file_size, sizeof(int));
+void handle_download_content(struct sockaddr_in sockarr, char filename[11]) {
+    // Create a TCP socket for connecting to the content server
+    int sock, loopend = 1, j, total_bytes_received = 0, file_size;
+    FILE *clientfileptr;
 
-			while((numBytes = fread(tmpFileBuffer, 1, sizeof(tmpFileBuffer), file_ptr)) > 0){
-				file_req_buffer[0] = 'C';
-				memcpy(file_req_buffer+1, tmpFileBuffer, sizeof(tmpFileBuffer));
-				write(tcp_socket, file_req_buffer, numBytes+sizeof(file_req_buffer[0]));
-				printf("%d bytes uploaded...\n", numBytes);
-				totalBytes += numBytes;
-			}
-		fclose(file_ptr);	
-	}
-	printf("Total bytes of %d bytes sent.\n", totalBytes);
-	close(tcp_socket);
-	return 0;
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) {
+        printf("Can't create socket\n");
+        return;
+    }
+
+    // Create a file to save the downloaded content
+    clientfileptr = fopen(filename, "wb");
+    printf("===== Downloading Content =====\n");
+
+    // Connect to the content server using the provided address and port
+    if (connect(sock, (struct sockaddr *)&sockarr, sizeof(sockarr)) < 0) {
+        printf("Can't connect to file download host\n");
+        return;
+    }
+
+    // Send a download request (type 'D') to the content server
+    write(sock, "D", sizeof("D"));
+
+    // Read the file size from the content server
+    read(sock, &file_size, sizeof(int));
+
+    // Receive file data in chunks
+    while (loopend == 1) {
+        j = read(sock, file_res_buffer, FILEDATABUFFLEN);
+        if (file_res_buffer[0] == 'C') { // Check for 'C' (content data) PDUs
+            fwrite(file_res_buffer + 1, 1, j - 1, clientfileptr); // Write data to file
+            total_bytes_received += j - 1;
+
+            // Check if all data has been received
+            if (total_bytes_received >= file_size) {
+                printf("File download complete.\n");
+                loopend = 0;
+            }
+        } else {
+            printf("Error during file download.\n");
+            loopend = 0;
+        }
+    }
+
+    fclose(clientfileptr); // Close the file
+    printf("File received: %s\n", filename);
+    printf("Received %d/%d bytes.\n", total_bytes_received, file_size);
+
+    // Automatically register the downloaded file as a content server
+    strncpy(std_input, filename, sizeof(std_input));
+    handle_registration();
+
+    close(sock); // Close the TCP socket
 }
+
 
 void handle_deregistration() {
-	printf("\n=====Deregistering file=====\n");
-	printf("Filename is: %s\n", std_input);
-	req_pdu.type = 'T';
-	//retreiving filename from command line input buffer
-	memcpy(req_pdu.data, std_input , strlen(std_input));
-	memcpy(req_pdu.data+11, peer_name , strlen(peer_name));
-	send_udp_request();
-	printf("Deregister request sent. Awaiting Acknlowledgement.....\n");
+    // Print the filename to deregister
+    printf("\n===== Deregistering File =====\n");
+    printf("Filename: %s\n", std_input);
 
-	//reading response from udp index server
-	if(read(indx_sock, res_buffer, BUFLEN) < 0) {
-		printf("Error reading search file\n");
-		mode=0;
-		return;
-	}
-	deserialize();
-	if(res_pdu.type == 'A') {
-		printf("Acknowledgment received. File deregistered!\n");
-         // Fetch and update the content list
-        req_pdu.type = 'O';  // Request updated content list
+    // Prepare the deregistration PDU (type 'T')
+    req_pdu.type = 'T'; // 'T' indicates a deregistration request
+    memcpy(req_pdu.data, std_input, strlen(std_input)); // Add the file name
+    memcpy(req_pdu.data + 11, peer_name, strlen(peer_name)); // Add the peer name
+
+    // Send the deregistration PDU to the index server
+    send_udp_request();
+    printf("Deregister request sent. Awaiting acknowledgment...\n");
+
+    // Wait for acknowledgment from the index server
+    if (read(indx_sock, res_buffer, BUFLEN) < 0) {
+        printf("Error reading response from index server.\n");
+        mode = 0;
+        return;
+    }
+
+    // Deserialize the response PDU
+    deserialize();
+
+    if (res_pdu.type == 'A') { // If acknowledgment is received
+        printf("Acknowledgment received. File deregistered successfully.\n");
+
+        // Request the updated list of content from the index server
+        req_pdu.type = 'O'; // 'O' indicates a list request
         send_udp_request();
-        receive_and_display_content_list();
-	} else if(res_pdu.type == 'E') {
-		printf("Error received: %s\n", res_buffer+1);
-	}
-	mode=0;
+        receive_and_display_content_list(); // Display the updated content list
+    } else if (res_pdu.type == 'E') { // If error is received
+        printf("Error: %s\n", res_buffer + 1);
+    }
+
+    mode = 0; // Return to the main menu
 }
+
 
 void handle_download_content(struct sockaddr_in sockarr, char filename[11]) {
 	//socket init stuff
