@@ -59,7 +59,7 @@ void receive_and_display_content_list() {
     deserialize();  // Decode the response into the PDU structure
 
     if (res_pdu.type == 'O') {  // Check if the response type is a content list
-        printf("\n===== Content List from Index Server =====\n");
+        printf("\nIndex Server List of All Content\n");
         char *token = strtok(res_pdu.data, ":");
         int index = 0;
 
@@ -73,7 +73,7 @@ void receive_and_display_content_list() {
             token = strtok(NULL, ":");
             index++;
         }
-        printf("=========================================\n");
+        printf("--------------------------------------\n");
     } else if (res_pdu.type == 'E') {  // Handle errors
         printf("Error: %s\n", res_pdu.data);
     } else {
@@ -100,30 +100,30 @@ void display_menu() {
 
 	switch(mode) {
 	case 0:
-		printf("------- Menu --------\n");
-		printf("1. Register Content\n");
-		printf("2. Deregister Content\n");
-		printf("3. List and Download Available Content\n");
-		printf("4. List all available content\n");
-		printf("5. Quit\n");
+		printf("MENU\n");
+		printf("1. REGISTER CONTENT\n");
+		printf("2. DEREGISTER CONTENT\n");
+		printf("3. LIST & DOWNLOAD AVAILABLE CONTENT\n");
+		printf("4. LIST ALL AVAILABLE CONTENT\n");
+		printf("5. QUIT\n");
 		printf("--------------------------\n");
-		printf("Please enter your choice: \n");
+		printf("Enter Choice: \n");
 	break;
 	case 1:
-		printf("-------------Register Content ---------------n");
-		printf("Please enter a file name: \n");
+		printf("Register Content\n");
+		printf("Enter File Name: \n");
 	break;
 	case 2:
-		printf("--------------De-Register Content ------------------\n");
-		printf("Please enter the filename: \n");
+		printf("Deregister Content\n");
+		printf("Enter File Name: \n");
 	break;
 	case 3:
 		if(did_list == 0) {
-		printf("----------------Listing available content----------------\n");
+		printf("List of Available Content\n");
 		handle_search_and_download();
 		did_list = 0;
 		} else {
-			printf("Select the corresponding file number to download or 0 to exit: \n");
+			printf("Please select the file number listed to download or 0 to exit: \n");
 		}
 	break;
 	case 4:  // New case for listing content
@@ -132,7 +132,7 @@ void display_menu() {
             receive_and_display_content_list(); // New function to handle response
         break;
 	case 5:
-	printf("------Quitting ------\n");
+	printf("Quitting...\n");
 	printf("Deregistering content");
 	break;
 	}
@@ -152,9 +152,9 @@ void handle_user_input() {
 		break;
 		case 1:
 			scanf("%s", std_input);
-			printf("registering file: %s\n", std_input);
+			printf("Registering the file: %s\n", std_input);
 			handle_registration();
-			printf("file registered\n");
+			printf("File has been registered\n");
 		break;
 		case 2:
 			scanf("%s", std_input);
@@ -181,11 +181,11 @@ void handle_socket_input(int socket) {
 	}
 	}
 	deserialize();
-	printf("received request of type: %c\n", res_pdu.type);
+	printf("Received request of type: %c\n", res_pdu.type);
 	switch(mode) {
 		case 0: {
 			if(res_pdu.type == 'D') {
-				printf("responding to download request...\n");
+				printf("Responding to download request.\n");
 			} else {
 				printf("Unsupported request\n");
 			}
@@ -193,7 +193,7 @@ void handle_socket_input(int socket) {
 		break;
 		case 1: {
 			if(res_pdu.type == 'A') {
-				printf("Acknowledgement received\n");
+				printf("Acknowledgement Received\n");
 				mode=0;
 			} else if(res_pdu.type == 'E') {
 				printf("Error registering content: %s\n", res_pdu.data);
@@ -204,7 +204,7 @@ void handle_socket_input(int socket) {
 		}
 		break;
 		case 2:
-			printf("deregistering content\n");
+			printf("Deregistering content\n");
 		break;
 	}
 }
@@ -220,7 +220,7 @@ void handle_search_and_download() {
 		return;
 	}
 	deserialize();
-	printf("response recived of type: %c\n", res_pdu.type);
+	printf("Response recived of type: %c\n", res_pdu.type);
 	if(res_pdu.type == 'O') {
 
 		while(loop) {
@@ -316,18 +316,18 @@ int listen_for_incomming_requests(int sock_id, struct sockaddr_in sock_descripto
 		client_len = sizeof(client);
 		new_sd = accept(sock_id, (struct sockaddr *)&client, (unsigned int *) &client_len);
 		if(new_sd < 0){
-			printf("Can't accept client \n");
+			printf("Can't Accept Client \n");
 			exit(1);
 	  } else{
-			printf("New client accepted\n");
+			printf("New Client Accepted\n");
 			switch(fork()){
 			case 0: {
-				printf("child process handling upload content\n");
+				printf("Child process handling upload content\n");
 				if( (n=read(new_sd, req_buf, BUFLEN) ) > 0 ) {
 					if(req_buf[0]=='D')
 						exit(handle_upload_content(new_sd, client, tmpfilename));
 				} else {
-					printf("unsupported request\n");
+					printf("Unsupported request\n");
 					exit(1);
 				}
 			}
@@ -352,7 +352,7 @@ void handle_download_content(struct sockaddr_in sockarr, char filename[11]) {
 
     // Create a file to save the downloaded content
     clientfileptr = fopen(filename, "wb");
-    printf("===== Downloading Content =====\n");
+    printf("Downloading Content...\n");
 
     // Connect to the content server using the provided address and port
     if (connect(sock, (struct sockaddr *)&sockarr, sizeof(sockarr)) < 0) {
@@ -398,8 +398,8 @@ void handle_download_content(struct sockaddr_in sockarr, char filename[11]) {
 
 void handle_deregistration() {
     // Print the filename to deregister
-    printf("\n===== Deregistering File =====\n");
-    printf("Filename: %s\n", std_input);
+    printf("\nDeregistering File...\n");
+    printf("File name: %s\n", std_input);
 
     // Prepare the deregistration PDU (type 'T')
     req_pdu.type = 'T'; // 'T' indicates a deregistration request
@@ -445,10 +445,10 @@ void handle_download_content(struct sockaddr_in sockarr, char filename[11]) {
 	
 	//creating file with filename
 	clientfileptr = fopen(filename, "wb");
-	printf("===== Downloading Content =====\n");																
+	printf("Downloading Content...\n");																
 /* Connect the socket */
 	if (connect(sock, (struct sockaddr *)&sockarr, sizeof(sockarr)) < 0)
-		printf("Can't connect to file download host \n");
+		printf("Cannot connect to file download host \n");
 	write(sock, "D", sizeof("D"));
 	//read file size first and then read file
 	read(sock, &file_size, sizeof(int));
@@ -464,7 +464,7 @@ void handle_download_content(struct sockaddr_in sockarr, char filename[11]) {
 
 			//if file buffer is not full then we assume file is done transmitting.
 			if(total_bytes_received >= file_size) {
-				printf("File should be done now....\n");
+				printf("File completed...\n");
 				loopend=0;
 			}
 		} else {
@@ -473,7 +473,7 @@ void handle_download_content(struct sockaddr_in sockarr, char filename[11]) {
 		}
 	}
 	fclose(clientfileptr);
-	printf("file Received: %s\n", filename);
+	printf("File Received: %s\n", filename);
 	printf("Received %d/%d bytes....\n", total_bytes_received, file_size);
 	//need to set input buffer for register operation
 	strncpy(std_input, filename, sizeof(std_input));
@@ -506,7 +506,7 @@ void handle_search_content(int file_indx) {
 		return;
 	}
 	deserialize();
-	printf("Received search respsonse of: %c\n", res_pdu.type);
+	printf("Received Search Response of: %c\n", res_pdu.type);
 	//if request is S we should receive ip and port of client with file.
 	if(res_pdu.type == 'S') {
 		//init socket stuff
@@ -597,9 +597,9 @@ main(int argc, char **argv){
 	if (connect(indx_sock, (struct sockaddr *)&sin, sizeof(sin)) < 0)
 		printf("Can't connect to %s %s \n", host, "Time");
 
-	printf("Please enter a peer name (max 10 chars): ");
+	printf("Please enter a peer name: ");
 	scanf("%s", peer_name);
-	printf("\nPlease enter your ip: ");
+	printf("\nPlease enter your IP: ");
 	scanf("%s", ip_add);
 
 	//add stdin to fds
