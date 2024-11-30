@@ -1,4 +1,3 @@
-/* time_server.c - main */
 
 #include <sys/types.h>
 #include <sys/socket.h>
