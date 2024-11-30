@@ -1,15 +1,11 @@
-/* time_client.c - main */
-
 #include <sys/types.h>
-
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <sys/socket.h>                                                                            
 #include <netinet/in.h>
-#include <arpa/inet.h>
-                                                                                
+#include <arpa/inet.h>                                                                             
 #include <netdb.h>
 
 #define BUFLEN		100	/* buffer length */
@@ -30,7 +26,6 @@ struct filePdu {
 void handle_registration();
 void handle_deregistration(void);
 void handle_search_and_download(void);
-
 void handle_list_content(int udp_socket, struct sockaddr_in index_server);
 void handle_search_content(int file_indx);
 void handle_download_content(struct sockaddr_in sockarr, char filename[11]);
@@ -39,10 +34,8 @@ int listen_for_incomming_requests(int tcp_socket, struct sockaddr_in sock_descri
 
 void send_udp_request();
 void send_tcp_request(int socket);
-
 void receive_udp_response(int socket, char* response, size_t response_size);
 void receive_tcp_response(int socket, char* response, size_t response_size);
-
 void handle_error_response(char response_type);
 
 char peer_name[11], std_buf[100], req_buffer[100], file_req_buffer[1640], file_res_buffer[1640], res_buffer[100], std_input[100], ip_add[10], filenames[MAXFILES][11];
@@ -489,12 +482,8 @@ void send_tcp_request(int socket) {
 		write(socket, file_req_buffer, FILEDATABUFFLEN);
 	}
 }
-/*------------------------------------------------------------------------
- * main - UDP client for TIME service that prints the resulting time
- *------------------------------------------------------------------------
- */
-int
-main(int argc, char **argv){
+
+int main(int argc, char **argv){
 
 	struct hostent	*phe;	/* pointer to host information entry	*/
 	struct sockaddr_in sin;	/* an Internet endpoint address		*/
